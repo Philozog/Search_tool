@@ -1,5 +1,5 @@
 """
-Cash-flow business scraper — New England (BizBuySell + Craigslist)
+Cash-flow business scraper — New England (BizBuySell)
 Uses undetected-chromedriver to bypass Cloudflare bot detection.
 
 Setup:
@@ -54,17 +54,6 @@ NE_URLS = {
     "Vermont":       "https://www.bizbuysell.com/vermont-businesses-for-sale/",
 }
 
-CL_REGIONS = [
-    ("boston",       "https://boston.craigslist.org/search/bfs"),
-    ("providence",   "https://providence.craigslist.org/search/bfs"),
-    ("hartford",     "https://hartford.craigslist.org/search/bfs"),
-    ("newhavenct",   "https://newhavenct.craigslist.org/search/bfs"),
-    ("maine",        "https://maine.craigslist.org/search/bfs"),
-    ("vermont",      "https://vermont.craigslist.org/search/bfs"),
-    ("newhampshire", "https://newhampshire.craigslist.org/search/bfs"),
-    ("rhodeisland",  "https://rhodeisland.craigslist.org/search/bfs"),
-]
-
 # ── Filters ───────────────────────────────────────────────────────────────────
 def matches_business(title: str, description: str) -> bool:
     text = (title + " " + description).lower()
@@ -95,7 +84,7 @@ def make_driver() -> uc.Chrome:
     opts = uc.ChromeOptions()
     opts.add_argument("--window-size=1280,900")
     # opts.add_argument("--headless=new")  # uncomment to run without a window
-    driver = uc.Chrome(options=opts, version_main=None)
+    driver = uc.Chrome(options=opts, version_main=147)
     driver.set_page_load_timeout(30)
     return driver
 
@@ -186,38 +175,6 @@ def scrape_bizbuysell(driver: uc.Chrome) -> list[dict]:
             print(f"    error: {e}")
     return listings
 
-def scrape_craigslist(driver: uc.Chrome) -> list[dict]:
-    listings = []
-    for region, url in CL_REGIONS:
-        print(f"  [Craigslist] {region}...")
-        try:
-            driver.get(url)
-            _pause()
-            _scroll(driver)
-            soup  = BeautifulSoup(driver.page_source, "html.parser")
-            items = soup.select("li.cl-search-result") or soup.select(".result-row")
-            before = len(listings)
-            for item in items:
-                title_tag = (item.select_one("a.posting-title span.label") or
-                             item.select_one("a.posting-title") or
-                             item.select_one(".result-title"))
-                hood_tag  = (item.select_one("span.hood") or
-                             item.select_one(".result-hood"))
-                link_tag  = (item.select_one("a.posting-title") or
-                             item.select_one("a.result-title"))
-                title    = title_tag.get_text(strip=True) if title_tag else ""
-                location = hood_tag.get_text(strip=True).strip("() ") if hood_tag else region
-                href     = link_tag["href"] if link_tag else ""
-                if title:
-                    listings.append({"source": f"Craigslist ({region})", "title": title,
-                                     "location": location or region, "description": "",
-                                     "price": "N/A", "url": href})
-            print(f"    → {len(listings) - before} raw")
-            _pause()
-        except Exception as e:
-            print(f"    error: {e}")
-    return listings
-
 # ── Email ─────────────────────────────────────────────────────────────────────
 def send_email(listings: list[dict]) -> None:
     if not APP_PASSWORD:
@@ -244,10 +201,12 @@ def send_email(listings: list[dict]) -> None:
 if __name__ == "__main__":
     driver = make_driver()
     try:
-        raw  = scrape_bizbuysell(driver)
-        raw += scrape_craigslist(driver)
+        raw = scrape_bizbuysell(driver)
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except OSError:
+            pass  # handle Windows cleanup issues with undetected-chromedriver
 
     filtered = [
         b for b in raw
